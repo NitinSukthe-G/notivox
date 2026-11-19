@@ -1,0 +1,24 @@
+# Files that must never be uploaded to GitHub or shared.
+# (In this file, a comment must be on its own line.)
+
+# your secret Sarvam key and MongoDB password live here
+.env
+
+# the virtual environment (anyone can recreate it from requirements.txt)
+.venv/
+
+# Python's auto-generated cache files
+__pycache__/
+
+# downloaded font files (recreated by setup_fonts.py)
+app/fonts/
+
+# the agent's voice sample - private, never upload
+test_voice.wav
+
+# any other audio clips and sample PDFs
+*.wav
+sample_*.pdf
+
+# demo video maker and its output (kept on this computer only)
+demo_video/

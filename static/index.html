@@ -1,0 +1,117 @@
+<!doctype html>
+<!--
+  index.html - the STRUCTURE of the NOTIVOX page (what is on the screen).
+  app.css decides how it LOOKS. app.js decides what it DOES.
+  Elements with an id="..." are the ones app.js finds and fills in.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NOTIVOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Noto+Sans+Devanagari:wght@400;600&display=swap">
+  <link rel="stylesheet" href="app.css?v=8">
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- ===== top bar ===== -->
+    <header class="top">
+      <div class="brand">
+        <div class="mark">N</div>
+        <div>
+          <h1>NOTIVOX</h1>
+          <p>Tell us what happened. Get a legal notice or letter you can print, sign and send.</p>
+        </div>
+      </div>
+      <button class="btn" id="newCase" type="button">+ New document</button>
+    </header>
+
+    <main class="grid">
+
+      <!-- ===== left: the conversation ===== -->
+      <section class="panel talk" aria-label="Conversation">
+        <div class="talk-head">
+          <div class="orb" id="orb" data-state="idle"></div>
+          <div>
+            <div class="status" id="status">Starting…</div>
+            <div class="sub" id="subStatus">Just talk - NOTIVOX listens and replies</div>
+          </div>
+        </div>
+
+        <!-- chat messages appear here (a written record of the conversation) -->
+        <div class="chat" id="chat" aria-live="polite"></div>
+
+        <!-- language buttons (only shown at the start; you can also just SAY the language) -->
+        <div class="langs" id="langs" hidden></div>
+
+        <!-- ===== VOICE FIRST: the big mic is the main control ===== -->
+        <div class="voice-dock">
+          <button class="mic" id="mic" type="button" aria-label="Tap to talk">
+            <!-- "listening" icon: five sound-wave bars (they move while listening or speaking) -->
+            <svg class="wave" viewBox="0 0 40 40" width="40" height="40" aria-hidden="true">
+              <rect x="5"  y="15" width="4" height="10" rx="2"/>
+              <rect x="12" y="9"  width="4" height="22" rx="2"/>
+              <rect x="19" y="4"  width="4" height="32" rx="2"/>
+              <rect x="26" y="9"  width="4" height="22" rx="2"/>
+              <rect x="33" y="15" width="4" height="10" rx="2"/>
+            </svg>
+          </button>
+          <div class="mic-label" id="micLabel">Tap to talk</div>
+          <div class="dock-row">
+            <label class="toggle" for="handsFree">
+              <input type="checkbox" id="handsFree" checked>
+              <span>Hands-free (mic turns on after each reply)</span>
+            </label>
+            <button class="linkbtn" id="typeToggle" type="button">⌨ Type instead</button>
+          </div>
+          <!-- typing is a backup, hidden until "Type instead" is pressed -->
+          <form class="composer" id="composer" hidden>
+            <input id="text" type="text" autocomplete="off" maxlength="1500" placeholder="Type your message…">
+            <button class="btn primary" id="send" type="submit">Send</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ===== right: case details + the notice ===== -->
+      <aside class="side">
+        <section class="panel">
+          <h2>Your case</h2>
+          <!-- the user can choose the language of the document at any time -->
+          <label class="picker" for="noticeLang">
+            <span>Document language</span>
+            <select id="noticeLang">
+              <option value="">Choose…</option>
+            </select>
+          </label>
+          <div id="caseInfo"><p class="muted">Details appear here as you talk.</p></div>
+        </section>
+
+        <section class="panel" id="noticePanel" hidden>
+          <div class="notice-head">
+            <h2 id="docTitle">Your document</h2>
+            <div class="tabs" id="tabs"></div>
+          </div>
+          <div id="problems"></div>
+          <p class="muted small">You can click any text in the document to change it. Then press “Save changes”.</p>
+          <div class="doc" id="doc"></div>
+          <div class="actions">
+            <button class="btn" id="saveEdits" type="button">Save changes</button>
+            <a class="btn primary" id="download" href="#">Download PDF</a>
+          </div>
+        </section>
+
+        <section class="panel" id="signPanel" hidden>
+          <h2>How to sign</h2>
+          <ol class="sign-steps" id="signSteps"></ol>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="foot">NOTIVOX helps you draft legal notices and letters from your own facts. It is not legal advice.</footer>
+  </div>
+  <!-- "?v=2" makes the browser load the NEW app.js instead of an old saved copy -->
+  <script src="app.js?v=12"></script>
+</body>
+</html>

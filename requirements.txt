@@ -1,0 +1,9 @@
+# The Python packages NOTIVOX needs. Install them all with:  pip install -r requirements.txt
+fastapi==0.115.6          # builds our web server and its API routes
+uvicorn[standard]==0.32.1 # actually runs the FastAPI server on your computer
+httpx==0.28.1             # lets Python call other websites' APIs (we call Sarvam with it)
+python-dotenv==1.0.1      # reads secret keys from the .env file
+python-multipart==0.0.20  # lets the server receive uploaded files (your voice recordings)
+pymongo==4.10.1           # talks to your MongoDB database
+fpdf2==2.8.2              # creates PDF files from Python
+uharfbuzz>=0.39           # joins Hindi/Tamil/... letters correctly inside the PDF

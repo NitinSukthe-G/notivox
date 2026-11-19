@@ -1,0 +1,165 @@
+/*
+  app.css - how the NOTIVOX page LOOKS.
+  Colours are "variables" (--name) defined once at the top, so the whole page
+  can switch to dark mode just by changing these values.
+*/
+/* Minimal warm palette: "paper and ink". One accent colour (ink brown) + one soft colour (beige).
+   Status is shown with borders and weight, not extra colours. */
+:root {
+  --bg: #f7f4ef; --surface: #ffffff; --line: #e6ddd1; --fg: #2a231c; --muted: #7a6c5d;
+  --accent: #6b4f3a; --accent-ink: #ffffff; --accent-soft: #efe7dc;
+  --ok: #6b4f3a; --ok-soft: #efe7dc; --warn: #6b4f3a; --warn-soft: #efe7dc; --danger: #6b4f3a; --danger-soft: #efe7dc;
+  --paper: #fffdf9;
+  --font-ui: "IBM Plex Sans", "Noto Sans Devanagari", system-ui, sans-serif;
+  --font-doc: "Source Serif 4", "Noto Sans Devanagari", Georgia, serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1612; --surface: #231e19; --line: #3a3129; --fg: #efe7dc; --muted: #b3a492;
+    --accent: #c9a582; --accent-ink: #1a1612; --accent-soft: #33291f;
+    --ok: #c9a582; --ok-soft: #2e251c; --warn: #c9a582; --warn-soft: #2e251c; --danger: #c9a582; --danger-soft: #2e251c;
+    --paper: #201b16;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--font-ui); }
+h1, h2 { margin: 0; font-family: var(--font-doc); }
+button, input { font: inherit; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); margin: 0; }
+.small { font-size: 12.5px; }
+
+.wrap { max-width: 1200px; margin: 0 auto; padding: 18px 16px 30px; display: flex; flex-direction: column; gap: 16px; }
+
+/* ---------- top bar ---------- */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.mark { width: 44px; height: 44px; border-radius: 12px; background: var(--accent); color: var(--accent-ink);
+        display: grid; place-items: center; font: 700 22px var(--font-doc); }
+.brand h1 { font-size: 24px; letter-spacing: .04em; }
+.brand p { margin: 0; color: var(--muted); }
+
+/* ---------- layout: two columns, one on phones ---------- */
+.grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; min-width: 0; }
+.panel h2 { font-size: 17px; margin-bottom: 10px; }
+.side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* ---------- buttons ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 15px; border-radius: 10px;
+       border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; text-decoration: none; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+/* ---------- conversation ---------- */
+.talk { display: flex; flex-direction: column; padding: 0; }
+.talk-head { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.status { font-weight: 600; }
+.sub { color: var(--muted); font-size: 13px; }
+.orb { width: 46px; height: 46px; border-radius: 50%; flex: none; position: relative;
+       background: radial-gradient(circle at 35% 30%, var(--accent-soft), var(--accent) 70%); }
+.orb::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; }
+.orb[data-state="listening"]::after { animation: pulse 1.1s ease-out infinite; }
+.orb[data-state="thinking"]::after { opacity: .7; border-style: dashed; animation: spin 1.4s linear infinite; }
+.orb[data-state="speaking"] { animation: talk .45s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: .8; transform: scale(.9); } to { opacity: 0; transform: scale(1.35); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes talk { from { transform: scale(1); } to { transform: scale(1.08); } }
+
+.chat { height: 440px; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 86%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.agent { align-self: flex-start; background: var(--accent-soft); border-bottom-left-radius: 4px; }
+.msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+.msg.system { align-self: center; background: transparent; color: var(--muted); font-size: 13px; text-align: center; }
+.msg .play { margin-left: 8px; border: 0; background: none; color: inherit; cursor: pointer; opacity: .7; }
+
+.langs { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 12px; }
+.langs .btn { padding: 7px 12px; }
+
+/* ---------- voice dock: the big mic is the main control ---------- */
+.voice-dock { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 16px 14px; border-top: 1px solid var(--line); }
+.mic { width: 78px; height: 78px; flex: none; border-radius: 50%; border: 0; cursor: pointer;
+       background: var(--accent); color: var(--accent-ink); display: grid; place-items: center;
+       box-shadow: 0 4px 14px rgba(0, 0, 0, .12); transition: transform .15s; }
+.mic:hover { transform: scale(1.04); }
+.mic.speaking { background: var(--accent-soft); color: var(--accent); }
+
+/* the sound-wave icon: bars grow and shrink like a voice while listening or speaking */
+.wave rect { fill: currentColor; transform-box: fill-box; transform-origin: center; }
+.mic.recording .wave rect, .mic.speaking .wave rect { animation: bar .9s ease-in-out infinite; }
+.mic .wave rect:nth-child(2) { animation-delay: .15s; }
+.mic .wave rect:nth-child(3) { animation-delay: .3s; }
+.mic .wave rect:nth-child(4) { animation-delay: .45s; }
+.mic .wave rect:nth-child(5) { animation-delay: .6s; }
+@keyframes bar { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.35); } }
+.mic-label { font-weight: 600; font-size: 14.5px; min-height: 1.4em; text-align: center; }
+.dock-row { display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.toggle { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.toggle input { accent-color: var(--accent); }
+.linkbtn { border: 0; background: none; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: 13px; padding: 0; }
+.composer { display: flex; gap: 8px; width: 100%; }
+.composer input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+                  background: var(--bg); color: var(--fg); }
+
+/* "Start talking" card shown before the first conversation (browsers need one tap before playing sound) */
+.start-card { margin: auto; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 34ch; }
+.start-card strong { font-family: var(--font-doc); font-size: 19px; }
+.start-card p { margin: 0; color: var(--muted); }
+.start-card .btn { padding: 12px 22px; font-size: 16px; border-radius: 999px; }
+.mic.recording { background: var(--surface); color: var(--accent); box-shadow: 0 0 0 3px var(--accent); animation: talk .6s ease-in-out infinite alternate; }
+
+/* ---------- case details ---------- */
+.picker { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+          padding: 8px 10px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.picker span { font-weight: 600; font-size: 14px; }
+.picker select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { padding: 2px 9px; border-radius: 999px; font-size: 12.5px; border: 1px dashed var(--muted); color: var(--muted); }
+.chip.ok { border: 1px solid var(--accent); color: var(--accent); }
+.alert { margin-top: 10px; padding: 9px 12px; border-radius: 6px; border-left: 3px solid var(--accent);
+         background: var(--accent-soft); color: var(--fg); font-size: 13.5px; }
+.alert.warn { border-left-style: dashed; }
+
+/* ---------- the notice preview ---------- */
+.notice-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.notice-head h2 { margin: 0; }
+.tabs { display: flex; gap: 4px; }
+.tabs button { padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; font-size: 13px; }
+.tabs button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+.doc { font: 14.5px/1.6 var(--font-doc); background: var(--paper); border: 1px solid var(--line); border-radius: 10px;
+       padding: 18px 20px; max-height: 620px; overflow-y: auto; margin: 10px 0; }
+.doc h3 { text-align: center; font-size: 17px; letter-spacing: .06em; margin: 0; }
+.doc .center { text-align: center; font-size: 13px; color: var(--muted); }
+.doc .right { text-align: right; }
+.doc .label { font-weight: 700; margin-top: 10px; }
+.doc p { margin: 4px 0; white-space: pre-line; }   /* pre-line: keep line breaks like "Thanking you,\nYours faithfully," */
+.doc ol { padding-left: 22px; margin: 8px 0; }
+.doc li { margin-bottom: 6px; }
+.doc [contenteditable="true"] { border-radius: 4px; outline: 1px dashed transparent; }
+.doc [contenteditable="true"]:hover { outline-color: var(--line); }
+.doc [contenteditable="true"]:focus { outline: 2px solid var(--accent); background: var(--accent-soft); }
+
+/* signing markers: the numbers 1-4 match the PDF and the "How to sign" steps */
+.marker { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+          background: var(--accent); color: var(--accent-ink); font: 700 12px var(--font-ui); margin-right: 6px; vertical-align: middle; }
+.signbox { width: 230px; max-width: 100%; height: 74px; border: 2px dashed var(--accent); border-radius: 8px; margin: 6px 0;
+           display: flex; align-items: flex-end; padding: 6px 8px; font: 12px var(--font-ui); color: var(--accent); }
+.initials { margin-top: 14px; padding-top: 8px; border-top: 1px dashed var(--line); font: 12.5px var(--font-ui); color: var(--muted); }
+
+.actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.sign-steps { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.sign-steps li { display: flex; gap: 8px; align-items: flex-start; }
+
+.foot { color: var(--muted); font-size: 12.5px; text-align: center; }
+
+@media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; } }
