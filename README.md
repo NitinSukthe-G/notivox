@@ -17,9 +17,11 @@ to send it.
 
 ## Demo
 
-[![Watch the NOTIVOX demo (3 min, with sound)](docs/demo-thumbnail.png)](docs/NOTIVOX-demo.mp4)
 
-**▶ [Watch the demo video](docs/NOTIVOX-demo.mp4)** (3 minutes, with sound)
+
+Uploading NOTIVOX-demo.mp4…
+
+
 
 A real conversation recorded in the running app. Someone's motorcycle was scratched outside their house. They tell
 NOTIVOX what happened, NOTIVOX asks only for the missing details in its own voice, writes a police complaint
