@@ -17,9 +17,11 @@ to send it.
 
 ## Demo
 
-[![Watch the NOTIVOX demo (about 2.5 min, with sound)](docs/demo-thumbnail.png)](docs/NOTIVOX-demo.mp4)
 
-**▶ [Watch the demo video](docs/NOTIVOX-demo.mp4)** (about 2½ minutes, with sound)
+
+https://github.com/user-attachments/assets/d1c602d7-5668-4c27-82bf-6a6e4175a404
+
+
 
 A spoken conversation between a customer and NOTIVOX. Someone's motorcycle was scratched outside their house.
 They talk to NOTIVOX; NOTIVOX answers in its own voice, asks only what it needs, writes a police complaint asking
