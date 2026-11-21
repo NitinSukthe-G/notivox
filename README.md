@@ -17,22 +17,22 @@ to send it.
 
 ## Demo
 
-[![Watch the NOTIVOX demo (3 min, with sound)](docs/demo-thumbnail.png)](docs/NOTIVOX-demo.mp4)
+[![Watch the NOTIVOX demo (about 2.5 min, with sound)](docs/demo-thumbnail.png)](docs/NOTIVOX-demo.mp4)
 
-**▶ [Watch the demo video](docs/NOTIVOX-demo.mp4)** (3 minutes, with sound)
+**▶ [Watch the demo video](docs/NOTIVOX-demo.mp4)** (about 2½ minutes, with sound)
 
-A real conversation recorded in the running app. Someone's motorcycle was scratched outside their house. They tell
-NOTIVOX what happened, NOTIVOX asks only for the missing details in its own voice, writes a police complaint
-asking the police to register an FIR, explains how to sign it, and the printable PDF is downloaded.
+A spoken conversation between a customer and NOTIVOX. Someone's motorcycle was scratched outside their house.
+They talk to NOTIVOX; NOTIVOX answers in its own voice, asks only what it needs, writes a police complaint asking
+the police to register an FIR, explains where to sign, and the printable PDF is downloaded.
 
 | Step in the video | What you see |
 |---|---|
-| 1-2 | Tap **Start talking** and choose a language |
-| 3-4 | Tell the story; NOTIVOX asks only for what is missing |
-| 5 | Pick the language of the document |
-| 6-7 | The letter is generated, with the signing steps spoken aloud |
-| 8 | **Download PDF** |
-| 9 | The printable PDF, ready to sign and send |
+| 1-2 | NOTIVOX greets you out loud and asks your language; you answer by voice |
+| 3 | Tell your story by speaking |
+| 4 | "I will fill the remaining details myself": NOTIVOX stops asking and leaves blank lines |
+| 5-6 | Pick the document language and confirm |
+| 7-8 | The letter is written, and the signing steps are spoken aloud |
+| 9-10 | **Download PDF**, then the printable PDF, ready to sign and send |
 
 ### The PDF from the demo
 
@@ -53,12 +53,17 @@ English. NOTIVOX lets anyone create one **just by talking**, in Hindi, Tamil, Te
 
 ## Features
 
-- **Voice-first conversation.** Tap once and just talk. The mic turns on by itself after every reply (hands-free),
-  and you can interrupt the agent at any time. Typing is available as a backup.
+- **Voice-first conversation.** NOTIVOX greets you out loud as soon as the page opens. After every reply the mic
+  turns on by itself (hands-free), and you can **interrupt her mid-sentence just by speaking**, like a phone call.
+  Typing is available as a backup.
+- **One voice.** Every reply, in every language, is spoken in the same voice (Sarvam's `ishita_enhi_companion`),
+  one reply after another, never overlapping.
 - **11 languages.** English, Hindi, Bengali, Tamil, Telugu, Kannada, Malayalam, Marathi, Gujarati, Punjabi and Odia.
   The agent asks your language first and sticks to it. Switch any time by saying "speak in Tamil" (spelling
   mistakes like "engilsh" are understood).
 - **Notices and letters.** 19 document types, chosen automatically from your story.
+- **Fill in the rest by hand.** Say "I will fill the details myself, just write the letter" and NOTIVOX stops asking:
+  anything missing becomes a blank line (`____________`) on the document, and you can also edit it on screen.
 - **Your document, your language.** Pick the document's language separately from the conversation language. A
   translated copy is included together with the English copy.
 - **Printable PDF.** A4 format with a "Sign here" box, an "Initials" box on every page, page numbers, and a final
@@ -105,10 +110,10 @@ flowchart LR
     H --> I[PDF with sign boxes]
 ```
 
-1. **Language first.** NOTIVOX asks which language you want to talk in.
+1. **Language first.** NOTIVOX greets you and asks which language you want to talk in.
 2. **Your story.** You explain what happened. The agent picks the right document type and quietly collects the facts.
 3. **Only what's missing.** A rule book in code tracks the required facts, so nothing important is forgotten and
-   nothing is asked twice.
+   nothing is asked twice. If you prefer to fill in details yourself, say so and it moves straight on.
 4. **Confirm.** The agent reads a short summary and asks for your go-ahead.
 5. **Draft.** The document is written in formal Indian legal style, checked, and translated if you chose another language.
 6. **Sign and send.** Download the PDF and follow the signing guide.
@@ -119,7 +124,7 @@ flowchart LR
 |---|---|
 | Speech-to-text | Sarvam `saaras:v4` (code-mixed Indian speech) |
 | Language model | Sarvam `sarvam-105b` |
-| Voice | Sarvam `bulbul:v4-flash` |
+| Voice | Sarvam `bulbul:v4-flash`, speaker `ishita_enhi_companion` |
 | Translation | Sarvam `sarvam-translate:v1` |
 | Backend | Python, FastAPI, Uvicorn |
 | Database | MongoDB (PyMongo) |
@@ -133,12 +138,12 @@ flowchart LR
 - Python 3.10 or newer
 - A [Sarvam AI](https://dashboard.sarvam.ai) API key
 - A MongoDB database, for example a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster
-- Chrome or Edge (for microphone and audio)
+- Chrome or Edge (for microphone and audio). **Headphones are recommended**, so the agent's voice is not picked up by your microphone
 
 ### Setup
 
 ```bash
-git clone https://github.com/<your-username>/notivox.git
+git clone https://github.com/NitinSukthe-G/notivox.git
 cd notivox
 
 python -m venv .venv
@@ -160,9 +165,6 @@ Copy `.env.example` to `.env` and fill in your own values:
 | `SARVAM_API_KEY` | Yes | Your Sarvam AI API key |
 | `MONGODB_URI` | Yes | Your MongoDB connection string |
 | `MONGODB_DB` | No | Database name (default `notivox`) |
-| `NOTIVOX_VOICE_CAP_INR` | No | Total spend (₹) after which voice is paused (default 80) |
-| `NOTIVOX_HARD_CAP_INR` | No | Total spend (₹) after which the AI is paused (default 95) |
-| `NOTIVOX_DAILY_DEVICE_LIMIT` | No | Sarvam calls allowed per device per day (default 80) |
 
 > Never commit your `.env` file. It is already listed in `.gitignore`.
 
@@ -180,13 +182,22 @@ python -m app.sarvam     # do the AI, translation, voice and speech-to-text work
 uvicorn app.main:app --reload
 ```
 
-Open **http://localhost:8000**, tap **Start talking**, allow the microphone, and speak.
+Open **http://localhost:8000**. NOTIVOX greets you out loud right away. Allow the microphone when the browser asks,
+then just talk.
+
+> If you open the page and hear nothing, your browser is blocking sound until you interact with the page once:
+> click anywhere (or press a key) and the greeting starts. To allow sound permanently, click the 🔒 icon next to the
+> address bar, open **Site settings**, and set **Sound** to **Allow**.
 
 ## Usage tips
 
 - Speak naturally and pause when you're done. The mic stops by itself after about 1.5 seconds of silence.
-- Tap the big button while the agent is speaking to interrupt her.
-- Turn off **Hands-free** if you prefer to tap before each answer, or use **Type instead** in a noisy place.
+- Start talking while the agent is speaking and she stops at once and listens. You can also tap the big button.
+- Turn off **Hands-free** if you prefer to tap before each answer (this also switches the microphone off between
+  answers), or use **Type instead** in a noisy place.
+- Say "speak in Tamil" at any time to change the language of the conversation. When asked for the language of the
+  document, just name it ("Telugu") and the agent keeps talking in your conversation language.
+- Say "I will fill the details myself, just write the letter" to skip the questions.
 - Use the **Document language** dropdown to change the language of the document at any time, even after it is written.
 - Ask "where do I sign?" at any point to hear the signing steps again.
 
@@ -232,7 +243,7 @@ notivox/
 │   ├── prompts.py       # instructions for the AI and fixed sentences
 │   ├── notice.py        # drafting, safety checks, translation, edits
 │   ├── pdf.py           # printable PDF with sign and initials boxes
-│   ├── sarvam.py        # Sarvam AI client with retries and spending limits
+│   ├── sarvam.py        # Sarvam AI client (language model, speech, voice, translation) with retries
 │   ├── db.py            # MongoDB access
 │   ├── config.py        # settings (reads .env)
 │   └── setup_fonts.py   # downloads the Noto fonts for the PDF
@@ -240,6 +251,7 @@ notivox/
 │   ├── index.html       # page structure
 │   ├── app.css          # page style
 │   └── app.js           # voice, conversation, preview, editing, download
+├── docs/                # demo video, demo PDF and README pictures
 ├── cli.py               # terminal chat
 ├── requirements.txt
 └── .env.example
@@ -249,13 +261,16 @@ notivox/
 
 - Your keys stay on the server. The browser never sees them.
 - Cases are stored in your own MongoDB and can be deleted.
-- Spending limits stop Sarvam calls before your credit runs out, and each device has a daily limit.
+- NOTIVOX adds no usage limits of its own; only your Sarvam credits apply.
 
 ## Limitations
 
 - NOTIVOX drafts from the facts you give. It does not verify them.
 - Speech recognition can mishear names and numbers. Always read the preview before downloading.
 - The voice is only available where Sarvam supports it. If it can't speak a sentence, the reply is shown as text.
+- On laptop speakers, the agent's voice can be picked up by the microphone and interrupt her. Use headphones, or
+  turn off **Hands-free**.
+- Browsers may block sound until the first click on the page (see "Run" above).
 
 ## Disclaimer
 

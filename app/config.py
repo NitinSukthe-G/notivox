@@ -40,12 +40,7 @@ TTS_SPEAKER = "ishita_enhi_companion"
 MONGODB_URI = os.getenv("MONGODB_URI", "").strip()
 MONGODB_DB = os.getenv("MONGODB_DB", "notivox").strip()
 
-# ---------------------------------------------------------------- spending limits (rupees)
-# float(...) turns the text "80" into the number 80.0
-VOICE_CAP_INR = float(os.getenv("NOTIVOX_VOICE_CAP_INR", "80"))  # above this: stop Sarvam voice
-HARD_CAP_INR = float(os.getenv("NOTIVOX_HARD_CAP_INR", "95"))    # above this: stop everything
-DAILY_DEVICE_LIMIT = int(os.getenv("NOTIVOX_DAILY_DEVICE_LIMIT", "80"))  # Sarvam calls per device per day
-
+# (There are no spending or usage limits. Only your Sarvam credits themselves can run out.)
 
 def check() -> list[str]:
     """Return a list of problems with the settings (an empty list means all good)."""

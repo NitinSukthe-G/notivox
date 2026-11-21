@@ -185,20 +185,37 @@ def deep_merge(base: dict, patch: dict) -> dict:
     return result
 
 
+# Phrases that mean "I will fill the details myself - just write the document" (English, Hinglish, Hindi)
+SKIP_PATTERNS = [
+    r"\b(fill|filling|write|add)\b.{0,25}\b(myself|my own|by hand|later|on my own)\b",
+    r"\b(myself|my own|on my own)\b.{0,25}\b(fill|write|add)\b",
+    r"\bjust (write|make|prepare|draft)\b",
+    r"\bleave\b.{0,20}\bblank\b|\bblank\b",
+    r"khud\s*(se)?\s*(bhar|likh)|\bbas\s+(letter|notice|patra)\b|blank\s*chhod",
+    r"खुद\s*(से)?\s*(भर|लिख)|खाली\s*छोड़|बस\s*(पत्र|लेटर|नोटिस)",
+]
+
+
+def detect_skip(text: str) -> bool:
+    """Did the user say they will fill in the details themselves? ("I will fill my details, just write the letter")"""
+    lower = text.lower()
+    return any(re.search(p, lower) for p in SKIP_PATTERNS)
+
+
 def decide_stage(facts: dict, notice_type: str | None, language: str | None, confirmed: bool,
-                 talk_language: str | None = "set") -> str:
+                 talk_language: str | None = "set", skip: bool = False) -> str:
     """Work out where the conversation is, using rules (not the AI)."""
     if not talk_language:
         return "choose_language"              # first we must know which language to talk in
     if not facts and not notice_type:
         return "listening"                    # the user hasn't told us anything yet
-    if not notice_type or catalog.missing_facts(facts, notice_type):
-        return "clarifying"                   # still collecting facts
+    if not notice_type or (catalog.missing_facts(facts, notice_type) and not skip):
+        return "clarifying"                   # still collecting facts (unless the user chose to fill them in by hand)
     if not language:
         return "language"                     # facts complete; ask the notice language
     if not confirmed:
         return "confirm"                      # read the summary back and ask "shall I prepare it?"
-    return "ready"                            # time to write the notice (Step 7)
+    return "ready"                            # time to write the document
 
 
 def _history(messages: list[dict], n: int = 8) -> str:
@@ -226,8 +243,11 @@ def summary_for_ui(case: dict) -> dict:
         "language": case.get("language"),
         "language_name": sarvam.LANGUAGES.get(case.get("language") or "", None),
         "facts": case.get("facts", {}),
+        "skip_details": bool(case.get("skip_details")),
         "missing": [m["label"] for m in catalog.missing_facts(case.get("facts", {}), case.get("notice_type"))]
-                   if case.get("notice_type") else [],
+                   if case.get("notice_type") and not case.get("skip_details") else [],
+        "blanks": [m["label"] for m in catalog.missing_facts(case.get("facts", {}), case.get("notice_type"))]
+                  if case.get("notice_type") and case.get("skip_details") else [],
         "warnings": rules["warnings"] if case.get("notice_type") else [],
         "has_draft": bool(case.get("draft")),
     }
@@ -265,11 +285,11 @@ def turn(device_id: str, case_id: str, text: str) -> dict:
     if not case:
         raise ValueError("Case not found")
     text = text.strip()[:1500]
-    db.add_message(device_id, case_id, "user", text)
-    case["messages"].append({"role": "user", "text": text})
+    case["messages"].append({"role": "user", "text": text})     # kept in memory; saved together with the reply
 
     # ---- 0. first question: which language shall we talk in?
     if not case.get("talk_language"):
+        db.add_message(device_id, case_id, "user", text)
         code = detect_language_choice(text)
         if code:
             return set_talk_language(device_id, case_id, code)
@@ -279,12 +299,14 @@ def turn(device_id: str, case_id: str, text: str) -> dict:
     # ---- 0b. the user wants to switch the talk language ("speak in Telugu")
     switch_to = detect_language_switch(text, case["stage"])
     if switch_to and switch_to != case["talk_language"]:
+        db.add_message(device_id, case_id, "user", text)
         return set_talk_language(device_id, case_id, switch_to)
 
     # ---- 1. ask the AI
     notice_type = case.get("notice_type")
     rules = catalog.get(notice_type)
-    missing = catalog.missing_facts(case["facts"], notice_type) if notice_type else []
+    skip = bool(case.get("skip_details")) or detect_skip(text)       # user will fill the details by hand
+    missing = catalog.missing_facts(case["facts"], notice_type) if notice_type and not skip else []
     talk = case["talk_language"]
     system = prompts.AGENT_SYSTEM.format(
         sign_guide=" ".join(prompts.SIGN_GUIDE), types=catalog.types_for_prompt(), today=_today(),
@@ -292,6 +314,7 @@ def turn(device_id: str, case_id: str, text: str) -> dict:
         talk_style=prompts.TALK_STYLE.get(talk, f"{sarvam.LANGUAGES[talk]} in its own script"),
     )
     user = prompts.AGENT_TURN.format(
+        skip="YES - do not ask for any more details" if skip else "no",
         stage=case["stage"],
         notice_type=notice_type or "not decided yet",
         detail_keys=", ".join(k for k, _, _ in rules["details"]) if notice_type else "(choose a type first)",
@@ -301,15 +324,22 @@ def turn(device_id: str, case_id: str, text: str) -> dict:
         history=_history(case["messages"][:-1]),
         text=text,
     )
-    out = sarvam.chat_json(system, user, device_id=device_id, purpose="agent", max_tokens=1200)
+    out = sarvam.chat_json(system, user, device_id=device_id, purpose="agent", max_tokens=700)
     if not (out.get("reply") or "").strip():
         # The AI sometimes returns an empty reply - ask once more before giving up
-        out = sarvam.chat_json(system, user, device_id=device_id, purpose="agent", max_tokens=1200, temperature=0.4)
+        out = sarvam.chat_json(system, user, device_id=device_id, purpose="agent", max_tokens=700, temperature=0.4)
 
     # ---- 1b. safety net: the AI noticed a language-switch request our word check missed
     wanted = out.get("talk_language")
-    if wanted in sarvam.LANGUAGES and wanted != talk:
+    # Only believe it if the user really NAMED that language, and never while we are asking about the DOCUMENT
+    # language ("telugu" then means "write the letter in Telugu", not "speak Telugu to me") - unless the user
+    # clearly asks to switch ("speak in Telugu").
+    asked_doc_language = case["stage"] in ("language", "confirm")
+    really_asked = detect_language_choice(text) == wanted and (
+        not asked_doc_language or detect_language_switch(text, case["stage"]) == wanted)
+    if wanted in sarvam.LANGUAGES and wanted != talk and really_asked:
         patch = out.get("facts_patch") or {}
+        db.add_message(device_id, case_id, "user", text)
         if patch:                                        # keep any facts from this message
             db.update_case(device_id, case_id, {"facts": deep_merge(case["facts"], patch)})
         return set_talk_language(device_id, case_id, wanted)
@@ -336,15 +366,16 @@ def turn(device_id: str, case_id: str, text: str) -> dict:
     changed = facts != case["facts"] or language != case.get("language") or notice_type != case.get("notice_type")
     already_done = case["stage"] in ("ready", "drafted") and not changed
     confirmed = already_done or (bool(out.get("user_confirmed")) and case["stage"] == "confirm")
-    stage = decide_stage(facts, notice_type, language, confirmed, talk)
+    skip = skip or bool(out.get("skip_details"))
+    stage = decide_stage(facts, notice_type, language, confirmed, talk, skip)
     if stage == "ready" and case["stage"] == "drafted" and not changed:
         stage = "drafted"                                # the notice is already written
 
     # If the reply is still empty, use the backup line - in the user's OWN language (never a fixed Hindi line)
     reply = (out.get("reply") or "").strip() or in_language(talk, prompts.SORRY_EN, prompts.SORRY_HI, device_id)
     reply = ensure_language(reply, talk, device_id)      # never speak a different language than the user chose
-    db.update_case(device_id, case_id, {"facts": facts, "notice_type": notice_type, "language": language, "stage": stage})
-    db.add_message(device_id, case_id, "agent", reply)
+    changes = {"facts": facts, "notice_type": notice_type, "language": language, "stage": stage, "skip_details": skip}
+    db.save_turn(device_id, case_id, text, reply, changes)     # ONE database write for the whole turn
 
-    case.update({"facts": facts, "notice_type": notice_type, "language": language, "stage": stage})
+    case.update(changes)
     return {"reply": reply, **summary_for_ui(case)}

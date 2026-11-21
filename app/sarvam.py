@@ -9,8 +9,8 @@ Sarvam gives NOTIVOX four abilities, each through an "API"
   text_to_speech()  the MOUTH  - turns the agent's reply into voice          (model: bulbul:v4-flash)
   translate()       the TRANSLATOR - English notice -> Hindi/Tamil/...        (model: sarvam-translate:v1)
 
-Adapted from the knot project's sarvam.py (same retry + spend-guard ideas),
-but spending is now saved in MongoDB instead of SQLite.
+Every call retries on temporary problems, and its cost is recorded in MongoDB (spend_log) for your information.
+NOTIVOX adds no usage limits of its own: only your Sarvam credits apply.
 """
 import base64     # Sarvam sends audio as base64 text; this turns it back into sound bytes
 import json       # converts between JSON text and Python dictionaries
@@ -32,7 +32,7 @@ LANGUAGES = {
 
 # ================================================================ errors
 class BudgetExceeded(Exception):
-    """Raised when a call would cross our spending limit. The app then uses free fallbacks."""
+    """Raised when Sarvam says the credits are used up (HTTP 402). The reply is then shown as text only."""
 
 
 class SarvamError(Exception):
@@ -76,25 +76,14 @@ def _headers(json_body: bool = True) -> dict:
 def _raise_for_error(resp: httpx.Response, what: str):
     """Turn Sarvam's error answers into clear Python errors."""
     if resp.status_code == 402:
-        raise BudgetExceeded("Sarvam credits are exhausted")
+        raise BudgetExceeded("Your Sarvam credits are exhausted. Please add credits in the Sarvam dashboard.")
     if resp.status_code >= 400:
         raise SarvamError(f"{what} error {resp.status_code}: {resp.text[:300]}")
 
 
-# ================================================================ spend guard
-def _check_budget(device_id: str | None, voice: bool):
-    """Stop BEFORE spending if we are over a limit."""
-    spent = db.total_spend()
-    cap = config.VOICE_CAP_INR if voice else config.HARD_CAP_INR
-    if spent >= cap:
-        raise BudgetExceeded(f"Spending limit reached (Rs {spent:.2f} of Rs {cap:.0f})")
-    if device_id and db.device_calls_today(device_id) >= config.DAILY_DEVICE_LIMIT:
-        raise BudgetExceeded("Daily limit for this device reached. Please try again tomorrow.")
-
-
 def voice_available() -> bool:
-    """Can we still afford Sarvam voice? (If not, the web page uses the browser's free voice.)"""
-    return bool(config.SARVAM_API_KEY) and db.total_spend() < config.VOICE_CAP_INR
+    """Voice is available whenever a Sarvam key is set."""
+    return bool(config.SARVAM_API_KEY)
 
 
 # ================================================================ 1. BRAIN
@@ -121,7 +110,6 @@ def chat_json(system: str, user: str, *, device_id: str | None = None, purpose: 
     user   = the actual input for this turn
     Returns the JSON object the model wrote, as a dict.
     """
-    _check_budget(device_id, voice=False)
     body = {
         "model": config.LLM_MODEL,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -157,7 +145,6 @@ def speech_to_text(audio: bytes, filename: str, content_type: str, *, device_id:
     language_code = the language the user talks in (a hint, so English with an Indian accent
     is not mistaken for Hindi). Returns (transcript, language_code).
     """
-    _check_budget(device_id, voice=True)
     files = {"file": (filename, audio, content_type or "audio/wav")}
     data = {"model": config.STT_MODEL, "mode": config.STT_MODE}
     if language_code:
@@ -213,7 +200,6 @@ def text_to_speech(text: str, *, device_id: str | None, language_code: str | Non
     key = f"{lang}|{config.TTS_SPEAKER}|{text}"
     if key in _tts_cache:
         return _tts_cache[key]
-    _check_budget(device_id, voice=True)
 
     body = {"text": text, "target_language_code": lang, "model": config.TTS_MODEL, "speaker": config.TTS_SPEAKER}
     resp = _post("/text-to-speech", headers=_headers(), json=body)
@@ -237,7 +223,6 @@ def translate(text: str, target: str, *, device_id: str | None, source: str = "e
     """
     if target == source or not text.strip():
         return text
-    _check_budget(device_id, voice=False)
     out = []
     for chunk in _chunks(text, 1800):
         body = {"input": chunk, "source_language_code": source, "target_language_code": target,

@@ -5,10 +5,11 @@ MongoDB stores data as "documents" (like Python dictionaries) inside
 "collections" (like folders). NOTIVOX uses two collections:
 
   cases      -> one document per legal-notice conversation
-  spend_log  -> one document per paid Sarvam call (so we can stop before credits run out)
+  spend_log  -> one document per Sarvam call, with its cost (a record for your information)
 
 Other files never touch MongoDB directly - they call the small functions below.
 """
+import threading                              # runs small jobs in the background
 import uuid                                   # makes random unique ids
 from datetime import datetime, timezone, timedelta
 
@@ -76,7 +77,7 @@ def create_case(device_id: str) -> dict:
         "language": None,             # language the NOTICE is written in, e.g. "en-IN", "hi-IN"
         "facts": {},                  # everything the user has told us, in structured form
         "messages": [],               # the conversation: [{"role": "user"/"agent", "text": ..., "ts": ...}]
-        "draft": None,                # the finished notice text (Step 7)
+        "draft": None,                # the finished notice or letter (written by notice.py)
     }
     cases().insert_one(case)
     return case
@@ -113,29 +114,50 @@ def add_message(device_id: str, case_id: str, role: str, text: str) -> None:
     )
 
 
+def save_turn(device_id: str, case_id: str, user_text: str, agent_text: str, changes: dict) -> None:
+    """
+    Save a whole conversation turn in ONE database write (the user's line, the agent's reply and the
+    changed case fields). Before, this was 3-4 separate writes, and every write to MongoDB Atlas is a
+    round trip over the internet - so one write makes each reply noticeably faster.
+    """
+    t = now()
+    msgs = [{"role": "user", "text": user_text, "ts": t}, {"role": "agent", "text": agent_text, "ts": t}]
+    cases().update_one(
+        {"_id": case_id, "device_id": device_id},
+        {"$set": {**changes, "updated_at": t}, "$push": {"messages": {"$each": msgs, "$slice": -60}}},
+    )
+
+
 def delete_case(device_id: str, case_id: str) -> bool:
     """Delete a case for good. Returns True if something was deleted."""
     return cases().delete_one({"_id": case_id, "device_id": device_id}).deleted_count == 1
 
 
-# ================================================================ spending
+# ================================================================ cost record
 def log_spend(device_id: str | None, kind: str, inr: float, meta: dict | None = None) -> None:
-    """Remember the cost of one Sarvam call (kind = "llm", "stt", "tts", "translate")."""
-    spend_log().insert_one(
-        {"ts": now(), "device_id": device_id, "kind": kind, "inr": round(inr, 5), "meta": meta or {}}
-    )
+    """
+    Remember the cost of one Sarvam call (kind = "llm", "stt", "tts", "translate").
+    Saved in a background thread, so the user never waits for this bookkeeping.
+    """
+    doc = {"ts": now(), "device_id": device_id, "kind": kind, "inr": round(inr, 5), "meta": meta or {}}
+
+    def _save():
+        try:
+            spend_log().insert_one(doc)
+        except Exception:
+            pass                                   # bookkeeping must never break a conversation
+
+    threading.Thread(target=_save, daemon=True).start()
 
 
-def total_spend() -> float:
-    """Total rupees spent on Sarvam so far (all users together)."""
-    result = list(spend_log().aggregate([{"$group": {"_id": None, "sum": {"$sum": "$inr"}}}]))
+def total_spend(hours: int = 24) -> float:
+    """Rupees spent on Sarvam in the last `hours` hours (all users together). Resets by itself over time."""
+    since = now() - timedelta(hours=hours)
+    result = list(spend_log().aggregate([
+        {"$match": {"ts": {"$gte": since}}},
+        {"$group": {"_id": None, "sum": {"$sum": "$inr"}}},
+    ]))
     return float(result[0]["sum"]) if result else 0.0
-
-
-def device_calls_today(device_id: str) -> int:
-    """How many paid Sarvam calls this device made in the last 24 hours."""
-    since = now() - timedelta(hours=24)
-    return spend_log().count_documents({"device_id": device_id, "ts": {"$gte": since}})
 
 
 # ================================================================ self-test

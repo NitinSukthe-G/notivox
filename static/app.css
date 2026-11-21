@@ -106,12 +106,6 @@ button, input { font: inherit; }
 .composer { display: flex; gap: 8px; width: 100%; }
 .composer input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
                   background: var(--bg); color: var(--fg); }
-
-/* "Start talking" card shown before the first conversation (browsers need one tap before playing sound) */
-.start-card { margin: auto; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 34ch; }
-.start-card strong { font-family: var(--font-doc); font-size: 19px; }
-.start-card p { margin: 0; color: var(--muted); }
-.start-card .btn { padding: 12px 22px; font-size: 16px; border-radius: 999px; }
 .mic.recording { background: var(--surface); color: var(--accent); box-shadow: 0 0 0 3px var(--accent); animation: talk .6s ease-in-out infinite alternate; }
 
 /* ---------- case details ---------- */

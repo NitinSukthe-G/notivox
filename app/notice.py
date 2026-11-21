@@ -5,7 +5,7 @@ notice.py - turns the collected facts into a formal legal notice.
   update_draft() saves the user's own edits from the web page
   as_text()      the notice as plain text (for the terminal and for checking)
 
-The finished notice is a dictionary (not a PDF yet - the PDF is made from it in Step 8):
+The finished notice is a dictionary (not a PDF yet - pdf.py makes the PDF from it):
   {"date", "mode", "from_name", "from_address", "to_name", "to_role", "to_address",
    "subject", "opening", "paragraphs": [...], "legal_paragraph", "demand", "consequence",
    "annexures": [...], "deadline_days", "place"}
@@ -90,7 +90,8 @@ def _write_english(case: dict, device_id: str) -> tuple[dict, list[str]]:
     """Ask the AI to write the notice or letter in English, then check it."""
     rules = catalog.get(case["notice_type"])
     kind = rules["kind"]                                     # "notice" or "letter"
-    facts = case["facts"]
+    facts = catalog.apply_recipient_default(case["facts"], case["notice_type"])
+    facts = catalog.fill_blanks(facts, case["notice_type"])     # anything missing becomes a blank line to fill by hand
     raw_deadline = (facts.get("demand") or {}).get("deadline_days") or rules["deadline_days"]
     deadline = int(raw_deadline) if raw_deadline else None   # letters often have no deadline
     deadline_text = f", within {deadline} days of receiving this" if deadline else ""

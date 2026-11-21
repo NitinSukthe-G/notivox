@@ -15,6 +15,8 @@ For every type, this file says:
 The AI talks naturally; this file makes sure nothing important is forgotten.
 """
 
+import json
+
 # ---------------------------------------------------------------- facts every document needs
 # (path in the facts dictionary, label we show, hint for the AI on how to ask)
 COMMON_REQUIRED = [
@@ -344,6 +346,25 @@ def apply_recipient_default(facts: dict, notice_type: str | None) -> dict:
         if not (recipient.get("role_or_company") or "").strip() and office != recipient.get("address"):
             recipient["role_or_company"] = office
     return {**facts, "recipient": recipient}
+
+
+BLANK = "____________"          # a blank line the user fills in by hand after printing
+
+
+def fill_blanks(facts: dict, notice_type: str | None) -> dict:
+    """
+    Put a blank line (____________) in every required fact that is still missing, so the document can be
+    written without it and the user fills it in by hand. Used when the user says "I will fill my details myself".
+    Returns a new facts dictionary; the original is not changed.
+    """
+    result = json.loads(json.dumps(facts or {}))
+    for item in missing_facts(result, notice_type):
+        node = result
+        *parents, last = item["key"].split(".")
+        for part in parents:
+            node = node.setdefault(part, {})
+        node[last] = BLANK
+    return result
 
 
 def missing_facts(facts: dict, notice_type: str | None) -> list[dict]:

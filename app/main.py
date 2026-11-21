@@ -145,7 +145,7 @@ def my_cases(x_user_id: str | None = Header(None)):
 
 @app.get("/api/cases/{case_id}")
 def open_case(case_id: str, x_user_id: str | None = Header(None)):
-    """Everything about one case: summary, conversation and draft (to restore the page after a refresh)."""
+    """Everything about one case: summary, conversation and draft."""
     case = load_case(device(x_user_id), case_id)
     return {**agent.summary_for_ui(case), "messages": case.get("messages", []), "draft": case.get("draft")}
 
@@ -243,4 +243,4 @@ if config.STATIC_DIR.exists():
 else:
     @app.get("/")
     def no_page_yet():
-        return {"message": "NOTIVOX server is running. The web page comes in Step 10. Try /docs"}
+        return {"message": "NOTIVOX server is running, but the static/ folder with the web page was not found. Try /docs"}

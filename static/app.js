@@ -2,9 +2,9 @@
   app.js - what the NOTIVOX page DOES.
 
   1. Gives this browser an anonymous id (so the server knows which cases are yours)
-  2. Starts or restores a case, and shows the conversation
+  2. Starts a fresh case every time the page opens, and shows the conversation
   3. Language buttons, typing, and the MIC (records, stops by itself when you go quiet)
-  4. Plays the agent's voice (Ishita, from Sarvam - or the browser's own voice as a backup)
+  4. Plays the agent's voice (Ishita, from Sarvam) - one voice only, one reply after another; you can interrupt by speaking
   5. When everything is confirmed: asks the server to write the notice, shows it,
      lets you edit it, download the PDF, and shows where to sign
 */
@@ -52,11 +52,13 @@ const state = {
   dirty: false,     // has the user edited the notice without saving?
   languages: {},
   signGuide: [],
-  voiceOK: true,    // false = Sarvam voice not available, use the browser's voice
+  voiceOK: true,    // false = Sarvam voice not available: replies are shown as text only
   audio: null,      // the voice clip that is playing now
   busy: false,
+  speechId: 0,       // changes whenever the user interrupts, which cancels queued voices
+  audioDone: null,  // lets stopSpeaking() release the queue
   drafting: false,
-  started: false,   // has the user tapped "Start talking" yet? (browsers allow sound only after a tap)
+  started: true,   // the agent starts talking by itself when the page opens
   handsFree: true,  // turn the mic on automatically after the agent finishes speaking
 };
 
@@ -105,9 +107,10 @@ function setStatus(mode, text, sub) {
  */
 function listenAgain() {
   setStatus("idle", "Your turn");
+  bargeBaseline = null;
   // wait a moment so the mic does not catch the last echo of the agent's own voice
   setTimeout(() => {
-    if (state.handsFree && state.started && !state.busy && !state.drafting && !rec && !state.audio) startRecording();
+    if (state.handsFree && state.started && !state.busy && !state.drafting && !rec && !state.audio && speechPending === 0) startRecording();
   }, 400);
 }
 
@@ -124,7 +127,7 @@ function addMessage(role, text) {
     const replay = el("button", "play", "▶");
     replay.type = "button";
     replay.title = "Play again";
-    replay.addEventListener("click", () => speak(text));
+    replay.addEventListener("click", () => { stopSpeaking(); speak(text); });
     bubble.appendChild(replay);
   }
   $("chat").appendChild(bubble);
@@ -147,53 +150,126 @@ const STAGE_HINT = {
 };
 
 // ====================================================================== the agent's voice
+/*
+ * ONE voice queue. Every reply is spoken in Ishita's voice, ONE AFTER ANOTHER - two voices can never
+ * play at the same time (that was the overlap bug: a new reply started while an older voice was still
+ * being downloaded, so both played).
+ *
+ *  speak(text)     adds a reply to the end of the queue. It starts downloading its voice IMMEDIATELY (in
+ *                  parallel) but only plays when everything before it has finished.
+ *  stopSpeaking()  cancels everything queued and stops the sound now (used when the user taps or types).
+ *
+ * To start talking sooner, a long reply is cut into a first sentence and the rest: the first sentence
+ * is short, so its voice arrives quickly and starts playing while the rest is still downloading.
+ */
+let speechChain = Promise.resolve();   // the queue
+let speechPending = 0;                 // how many replies are queued or playing
+
 function stopSpeaking() {
-  if (state.audio) { state.audio.pause(); state.audio = null; }
+  stopBargeIn();
+  state.speechId++;                                    // cancels every queued reply
+  if (state.audio) {
+    const resolve = state.audioDone;
+    state.audio.pause();
+    state.audio = null;
+    state.audioDone = null;
+    if (resolve) resolve();                            // let the queue move on (it will see it was cancelled)
+  }
+}
+
+/** Cut a reply into [first sentence, the rest] so speech starts sooner. */
+function splitForSpeech(text) {
+  const m = text.match(/^(.{25,}?[.!?।])\s+(.+)$/s);
+  return m ? [m[1], m[2]] : [text];
+}
+
+/** Download the voice for one piece of text. Returns a sound URL, or null if there is no voice. */
+async function fetchVoice(text, lang) {
+  if (!state.voiceOK) return null;
+  try {
+    const resp = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "X-User-Id": DEVICE, "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text.slice(0, 1500), language: lang }),
+    });
+    if (resp.status === 402 || resp.status === 409) { textOnly(resp.status); return null; }
+    if (!resp.ok) return null;
+    return URL.createObjectURL(await resp.blob());
+  } catch (e) { return null; }
+}
+
+/** Play one sound and wait until it has finished (or was stopped). */
+function playUrl(url, id) {
+  return new Promise((resolve) => {
+    if (id !== state.speechId) { URL.revokeObjectURL(url); return resolve(); }
+    const audio = new Audio(url);
+    state.audio = audio;
+    state.audioDone = resolve;
+    const finish = () => {
+      URL.revokeObjectURL(url);
+      if (state.audio === audio) { state.audio = null; state.audioDone = null; }
+      resolve();
+    };
+    audio.onended = () => { stopBargeIn(); finish(); };
+    audio.onerror = () => { stopBargeIn(); finish(); };
+    setStatus("speaking", "Speaking…");
+    audio.play().then(() => startBargeIn(audio)).catch((e) => {
+      if (e && e.name === "NotAllowedError") waitForTap(audio, finish);   // browser blocks sound until a click
+      else finish();
+    });
+  });
 }
 
 /**
- * Speak a reply - ONLY in Ishita's voice (from Sarvam). There is no other voice in NOTIVOX:
- * if Ishita can't speak (budget used up, or a language her voice doesn't support),
- * the reply is shown as text only, and the conversation simply continues.
+ * Browsers refuse to play sound until the person has interacted with the page once. When that happens we
+ * quietly start the voice on the very first click, key press or touch ANYWHERE on the page (nothing is shown).
  */
-async function speak(text) {
-  stopSpeaking();
+function waitForTap(audio, finish) {
+  const events = ["pointerdown", "keydown", "touchstart"];
+  const go = () => {
+    events.forEach((ev) => document.removeEventListener(ev, go, true));
+    if (state.audio !== audio) return finish();        // it was cancelled while waiting
+    setStatus("speaking", "Speaking…");
+    audio.play().then(() => startBargeIn(audio)).catch(finish);
+  };
+  events.forEach((ev) => document.addEventListener(ev, go, true));
+}
+
+/** Speak a reply (queued after anything already speaking). */
+function speak(text) {
+  const id = state.speechId;
   const lang = (state.info && state.info.talk_language) || "en-IN";
-  if (state.voiceOK) {
+  const downloads = splitForSpeech(text).map((part) => fetchVoice(part, lang));   // start all downloads now
+  speechPending++;
+  speechChain = speechChain.then(async () => {
     try {
-      const resp = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "X-User-Id": DEVICE, "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.slice(0, 1500), language: lang }),
-      });
-      if (resp.status === 402 || resp.status === 409) { textOnly(resp.status); return; }
-      if (!resp.ok) throw new Error("voice failed");
-      const url = URL.createObjectURL(await resp.blob());
-      const audio = new Audio(url);
-      state.audio = audio;
-      audio.onended = () => { URL.revokeObjectURL(url); state.audio = null; listenAgain(); };
-      setStatus("speaking", "Speaking…");
-      await audio.play();                                  // may be blocked until the user clicks once
-    } catch (e) {
-      // "AbortError" just means a newer reply interrupted this one - that's normal, not a failure
-      if (e.name !== "AbortError") setStatus("idle", "Your turn", "Press ▶ on a message to hear it");
+      for (const download of downloads) {
+        if (id !== state.speechId) {                   // cancelled: don't wait, just clean up
+          download.then((u) => { if (u) URL.revokeObjectURL(u); });
+          continue;
+        }
+        const url = await download;
+        if (id !== state.speechId) { if (url) URL.revokeObjectURL(url); continue; }   // cancelled while waiting
+        if (url) await playUrl(url, id);
+      }
+    } finally {
+      speechPending--;
+      if (id === state.speechId && speechPending === 0) listenAgain();   // all done: your turn
     }
-  } else {
-    textOnly(402);
-  }
+  });
+  return speechChain;
 }
 
 /** Ishita can't speak right now: show a short note (once) and keep the conversation going in text. */
 let textOnlyNoted = false;
 function textOnly(status) {
-  if (status === 402) state.voiceOK = false;           // budget used up: stop asking for voice
+  if (status === 402) state.voiceOK = false;           // credits used up: stop asking for voice
   if (!textOnlyNoted) {
     addMessage("system", status === 402
-      ? "Voice is paused (usage limit reached). Replies will be shown as text."
+      ? "Voice is paused (Sarvam credits). Replies will be shown as text."
       : "Ishita's voice isn't available for this language, so replies will be shown as text.");
     textOnlyNoted = true;
   }
-  listenAgain();                                       // hands-free still works: you can keep talking
 }
 
 // ====================================================================== case summary panel
@@ -228,7 +304,10 @@ function renderCaseInfo(info) {
   box.appendChild(dl);
 
   const chips = el("div", "chips");
-  if (info.missing && info.missing.length) {
+  if (info.blanks && info.blanks.length) {
+    // the user chose to fill these in by hand: they become blank lines on the document
+    info.blanks.forEach((m) => chips.appendChild(el("span", "chip", "Fill by hand: " + m)));
+  } else if (info.missing && info.missing.length) {
     info.missing.forEach((m) => chips.appendChild(el("span", "chip", "Needed: " + m)));
   } else if (info.notice_type) {
     chips.appendChild(el("span", "chip ok", "All details collected"));
@@ -316,20 +395,98 @@ async function sendText(text) {
 }
 
 // ====================================================================== the mic
-// Tap once to start. Recording stops by itself after ~1.5 s of silence (or 29 s max). Tap again to stop early.
-let rec = null;   // the current recording session
+// Recording starts by itself (hands-free), by tapping the big button, or when you speak over the agent.
+// It stops by itself after ~1.5 s of silence (or 29 s max). Tap again to stop early.
+let rec = null;            // the current recording session
+let recStarting = false;   // true while the microphone is being opened (prevents starting twice)
+
+// ONE microphone stream is kept open while hands-free is on. It is used for recording AND for listening
+// while the agent speaks (barge-in), so the browser asks for permission only once.
+let micStream = null;
+let micDenied = false;
+
+async function getMic() {
+  if (micStream && micStream.getTracks().some((t) => t.readyState === "live")) return micStream;
+  // echoCancellation: the browser removes the agent's own voice from the mic sound
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  return micStream;
+}
+
+function releaseMic() {
+  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+}
+
+/** How loud is the sound right now? (0 = silence, 1 = very loud) */
+function loudnessOf(analyser, buffer) {
+  analyser.getByteTimeDomainData(buffer);
+  let sum = 0;
+  for (const v of buffer) sum += ((v - 128) / 128) ** 2;
+  return Math.sqrt(sum / buffer.length);
+}
+
+/*
+ * BARGE-IN: while NOTIVOX is speaking, listen to the microphone. As soon as the user starts talking
+ * (loud enough for about 0.15 seconds), stop her voice at once and start listening - like a phone call.
+ * Her own voice leaking into the mic is learned during the first 0.35 s and ignored.
+ */
+let bargeTimer = null;
+let bargeCtx = null;
+let bargeBaseline = null;   // how loud her own voice sounds in the mic (learned once per answer)
+
+function stopBargeIn() {
+  clearInterval(bargeTimer);
+  bargeTimer = null;
+  if (bargeCtx) { bargeCtx.close().catch(() => {}); bargeCtx = null; }
+}
+
+async function startBargeIn(audio) {
+  if (!state.handsFree || micDenied || bargeTimer || rec || recStarting) return;
+  let stream;
+  try { stream = await getMic(); } catch (e) { micDenied = true; return; }
+  if (state.audio !== audio || bargeTimer) return;      // her sentence already ended
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  bargeCtx = ctx;
+  const buffer = new Uint8Array(analyser.fftSize);
+  const began = Date.now();
+  let samples = 0, loudCount = 0;
+  bargeTimer = setInterval(() => {
+    const level = loudnessOf(analyser, buffer);
+    if (bargeBaseline === null && Date.now() - began < 350) {          // learning phase
+      samples++;
+      bargeLearn = ((bargeLearn || 0) * (samples - 1) + level) / samples;
+      return;
+    }
+    if (bargeBaseline === null) bargeBaseline = bargeLearn || 0;
+    const threshold = Math.max(0.08, bargeBaseline * 3);               // louder than her own voice leaking in
+    loudCount = level > threshold ? loudCount + 1 : 0;
+    if (loudCount >= 3) {                                              // ~150 ms of the user's voice
+      stopBargeIn();
+      stopSpeaking();                                                  // cut her off immediately
+      startRecording();                                                // and listen
+    }
+  }, 50);
+}
+let bargeLearn = 0;
 
 async function startRecording() {
+  if (rec || recStarting) return;
+  recStarting = true;
   let stream;
   try {
-    // echoCancellation: the browser removes the agent's own voice from the mic sound
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    stream = await getMic();
   } catch (e) {
+    micDenied = true;
+    recStarting = false;
     addMessage("system", "Microphone not available. Please allow microphone access, or type instead.");
     return;
   }
+  recStarting = false;
+  bargeBaseline = null;                                  // the next answer learns her voice level again
   const recorder = new MediaRecorder(stream);
   const chunks = [];
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -365,7 +522,7 @@ function stopRecording() {
   if (!rec) return;
   clearInterval(rec.timer);
   if (rec.recorder.state !== "inactive") rec.recorder.stop();
-  rec.stream.getTracks().forEach((t) => t.stop());     // turn the microphone off
+  if (!state.handsFree) releaseMic();                  // hands-free keeps the mic open so it can hear you interrupt
   $("mic").classList.remove("recording");
 }
 
@@ -594,7 +751,7 @@ function renderSignSteps() {
   $("signPanel").hidden = false;
 }
 
-// ====================================================================== start / restore a case
+// ====================================================================== start a case
 function resetScreen() {
   $("chat").replaceChildren();
   $("noticePanel").hidden = true;
@@ -614,25 +771,8 @@ async function newCase() {
     addMessage("agent", result.reply);
     applyInfo(result);
     setStatus("idle", "Your turn");
-    if (state.started) speak(result.reply);           // already tapped once: talk straight away
-    else showStartCard(result.reply);                 // first visit: one tap to start (needed for sound)
+    speak(result.reply);                              // NOTIVOX greets you the moment the page opens
   } catch (e) { showError(e); }
-}
-
-/** The big "Start talking" button shown on the first visit. The tap also unlocks sound in the browser. */
-function showStartCard(greeting) {
-  const card = el("div", "start-card");
-  card.appendChild(el("strong", null, "Talk to NOTIVOX"));
-  card.appendChild(el("p", null, "Tap below and just speak. NOTIVOX will listen, reply, and write your legal notice or letter."));
-  const go = el("button", "btn primary", "Start talking");
-  go.type = "button";
-  go.addEventListener("click", () => {
-    state.started = true;
-    card.remove();
-    speak(greeting);                                  // she greets you, then the mic turns on by itself
-  });
-  card.appendChild(go);
-  $("chat").prepend(card);
 }
 
 async function init() {
@@ -657,16 +797,14 @@ $("composer").addEventListener("submit", (e) => {
 $("mic").addEventListener("click", () => {
   if (rec) { stopRecording(); return; }     // second tap = stop now
   if (state.busy) return;
-  if (!state.started) {                     // tapping the mic also counts as "start"
-    state.started = true;
-    const card = document.querySelector(".start-card");
-    if (card) card.remove();
-  }
   stopSpeaking();                           // tapping the mic interrupts the agent
   startRecording();
 });
-$("newCase").addEventListener("click", () => { state.started = true; newCase(); });
-$("handsFree").addEventListener("change", (e) => { state.handsFree = e.target.checked; });
+$("newCase").addEventListener("click", newCase);
+$("handsFree").addEventListener("change", (e) => {
+  state.handsFree = e.target.checked;
+  if (!state.handsFree) { stopBargeIn(); if (!rec) releaseMic(); }   // hands-free off: turn the microphone off
+});
 $("typeToggle").addEventListener("click", () => {
   const form = $("composer");
   form.hidden = !form.hidden;
